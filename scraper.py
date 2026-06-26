@@ -1,5 +1,4 @@
 import os
-import csv
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime
@@ -11,45 +10,67 @@ ROLES = ["Business Analyst", "Data Analyst"]
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def clean_text(text):
+    return " ".join(text.split()).strip() if text else "N/A"
+
 def scrape_linkedin(page, role):
-    url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(role)}&f_TPR=r86400" # Last 24 hours
-    page.goto(url, wait_until="domcontentloaded")
-    page.wait_for_timeout(3000) # Let dynamic content load
-    
+    # Search India specifically
+    url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(role)}&location=India&geoId=102713980&f_TPR=r86400"
     jobs = []
-    cards = page.query_selector_all("div.base-card")[:10]
-    for i, card in enumerate(cards, start=1):
-        title_el = card.query_selector("h3")
-        company_el = card.query_selector("h4")
-        link_el = card.query_selector("a.base-card__full-link")
-        loc_el = card.query_selector(".job-search-card__location")
+    try:
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        cards = page.query_selector_all("div.base-card")
         
-        jobs.append({
-            "s.no": i,
-            "job_post_date": datetime.now().strftime("%Y-%m-%d"),
-            "title": title_el.inner_text().strip() if title_el else "",
-            "company": company_el.inner_text().strip() if company_el else "",
-            "link": link_el.get_attribute("href") if link_el else "",
-            "location": loc_el.inner_text().strip() if loc_el else "",
-            "platform": "LinkedIn",
-            "role": role
-        })
+        for i, card in enumerate(cards[:10], start=1):
+            title = clean_text(card.query_selector("h3").inner_text()) if card.query_selector("h3") else role
+            company = clean_text(card.query_selector("h4").inner_text()) if card.query_selector("h4") else "N/A"
+            link = card.query_selector("a.base-card__full-link").get_attribute("href") if card.query_selector("a.base-card__full-link") else "#"
+            loc = clean_text(card.query_selector(".job-search-card__location").inner_text()) if card.query_selector(".job-search-card__location") else "India"
+            
+            jobs.append({
+                "S.No": i, "Platform": "LinkedIn", "Job Post Date": datetime.now().strftime("%Y-%m-%d"),
+                "Title": title, "Company": company, "Link": link.split('?')[0],
+                "Compensation": "Check JD", "YoE": "Check JD", "Location": loc,
+                "Ambition Box Rating": "N/A", "Glassdoor Rating": "N/A"
+            })
+    except Exception as e:
+        print(f"LinkedIn Error: {e}")
     return jobs
 
-# Add similar Playwright functions for Indeed, Naukri, and HiringCafe here...
+def scrape_indeed(page, role):
+    # Indeed India
+    url = f"https://in.indeed.com/jobs?q={quote_plus(role)}&l=India&sort=date"
+    jobs = []
+    try:
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        cards = page.query_selector_all("div.job_seen_beacon")
+        for i, card in enumerate(cards[:10], start=1):
+            title = clean_text(card.query_selector("h2.jobTitle").inner_text()) if card.query_selector("h2.jobTitle") else role
+            company = clean_text(card.query_selector("[data-testid='company-name']").inner_text()) if card.query_selector("[data-testid='company-name']") else "N/A"
+            link = "https://in.indeed.com" + card.query_selector("h2.jobTitle a").get_attribute("href") if card.query_selector("h2.jobTitle a") else "#"
+            loc = clean_text(card.query_selector("[data-testid='text-location']").inner_text()) if card.query_selector("[data-testid='text-location']") else "India"
+            
+            jobs.append({
+                "S.No": i, "Platform": "Indeed", "Job Post Date": datetime.now().strftime("%Y-%m-%d"),
+                "Title": title, "Company": company, "Link": link,
+                "Compensation": "Check JD", "YoE": "Check JD", "Location": loc,
+                "Ambition Box Rating": "N/A", "Glassdoor Rating": "N/A"
+            })
+    except Exception as e:
+        print(f"Indeed Error: {e}")
+    return jobs
 
 def send_email(files):
     msg = EmailMessage()
-    msg['Subject'] = f"Daily Job Matches - {datetime.now().strftime('%Y-%m-%d')}"
+    msg['Subject'] = f"🚀 Live Job Report - {datetime.now().strftime('%Y-%m-%d')}"
     msg['From'] = os.environ.get("EMAIL_USER")
     msg['To'] = os.environ.get("TO_EMAIL")
-    msg.set_content("Attached are the latest job listings for today.")
-
+    msg.set_content("Your daily authentic job report is attached.")
+    
     for file in files:
         with open(file, 'rb') as f:
-            file_data = f.read()
-            msg.add_attachment(file_data, maintype='text', subtype='csv', filename=os.path.basename(file))
-
+            msg.add_attachment(f.read(), maintype='text', subtype='csv', filename=os.path.basename(file))
+            
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(os.environ.get("EMAIL_USER"), os.environ.get("EMAIL_PASS"))
         smtp.send_message(msg)
@@ -57,25 +78,22 @@ def send_email(files):
 def main():
     all_files = []
     with sync_playwright() as p:
+        # Use a more realistic browser context
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         page = context.new_page()
 
         for role in ROLES:
-            print(f"Scraping LinkedIn for {role}...")
-            linkedin_jobs = scrape_linkedin(page, role)
-            
-            df = pd.DataFrame(linkedin_jobs)
-            if not df.empty:
+            data = scrape_linkedin(page, role) + scrape_indeed(page, role)
+            if data:
+                df = pd.DataFrame(data)
                 filename = os.path.join(OUTPUT_DIR, f"{role.replace(' ', '_')}_Jobs.csv")
                 df.to_csv(filename, index=False)
                 all_files.append(filename)
-                
         browser.close()
         
-    if all_files and os.environ.get("EMAIL_USER"):
+    if all_files:
         send_email(all_files)
-        print("Email dispatched successfully.")
 
 if __name__ == "__main__":
     main()
