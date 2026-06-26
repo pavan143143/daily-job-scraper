@@ -30,6 +30,7 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           TO_EMAIL: ${{ secrets.TO_EMAIL }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
         run: python scraper.py
 
       - name: Archive CSV Output
