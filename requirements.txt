@@ -1,3 +1,4 @@
 pandas
 xlsxwriter
 google-search-results
+playwright
