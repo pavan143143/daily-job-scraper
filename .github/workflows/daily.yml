@@ -7,12 +7,6 @@ import pandas as pd
 from playwright.sync_api import sync_playwright
 
 ROLES = ["Business Analyst", "Data Analyst"]
-PLATFORMS = ["LinkedIn", "Indeed", "Naukri"]
-
-# Strictly enforce India
-GEO_LOCATION = "India"
-GEO_ID = "102713980" 
-
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -20,162 +14,81 @@ def clean_text(text):
     return " ".join(text.split()).strip() if text else "N/A"
 
 def scrape_linkedin(page, role):
-    url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(role)}&location={quote_plus(GEO_LOCATION)}&geoId={GEO_ID}&f_TPR=r86400"
+    url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(role)}&location=India&geoId=102713980&f_TPR=r86400"
     jobs = []
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        page.wait_for_timeout(3000)
+        page.goto(url, wait_until="networkidle", timeout=30000)
         cards = page.query_selector_all("div.base-card")
-        
         for i, card in enumerate(cards[:10], start=1):
-            title_el = card.query_selector("h3")
-            company_el = card.query_selector("h4")
-            link_el = card.query_selector("a.base-card__full-link")
-            loc_el = card.query_selector(".job-search-card__location")
-            
-            link = link_el.get_attribute("href") if link_el else ""
-            if "?" in link:
-                link = link.split("?")[0]
-                
-            location = clean_text(loc_el.inner_text()) if loc_el else "India"
-            
-            # Skip USA jobs forced by GitHub's server location
-            if "GA" in location or "DC" in location or "NY" in location or "CA" in location or "United States" in location:
-                continue
-
+            title = clean_text(card.query_selector("h3").inner_text()) if card.query_selector("h3") else role
+            company = clean_text(card.query_selector("h4").inner_text()) if card.query_selector("h4") else "N/A"
+            link = card.query_selector("a.base-card__full-link").get_attribute("href") if card.query_selector("a.base-card__full-link") else "#"
+            loc = clean_text(card.query_selector(".job-search-card__location").inner_text()) if card.query_selector(".job-search-card__location") else "India"
             jobs.append({
-                "Platform": "LinkedIn",
-                "Job Post Date": datetime.now().strftime("%Y-%m-%d"),
-                "Title": clean_text(title_el.inner_text()) if title_el else f"{role}",
-                "Company": clean_text(company_el.inner_text()) if company_el else "N/A",
-                "Link": link if link else "https://www.linkedin.com/jobs",
-                "Compensation": "Check JD", 
-                "YoE": "Check JD",
-                "Location": location,
-                "Ambition Box Rating": "N/A",
-                "Glassdoor Rating": "N/A"
+                "S.No": i, "Platform": "LinkedIn", "Job Post Date": datetime.now().strftime("%Y-%m-%d"),
+                "Title": title, "Company": company, "Link": link.split('?')[0],
+                "Compensation": "Check JD", "YoE": "Check JD", "Location": loc,
+                "Ambition Box Rating": "N/A", "Glassdoor Rating": "N/A"
             })
     except Exception as e:
-        print(f"LinkedIn active scraping warning: {e}")
-        
+        print(f"LinkedIn Error: {e}")
     return jobs
 
 def scrape_indeed(page, role):
-    # Live Indeed India search URL sorted by most recent
     url = f"https://in.indeed.com/jobs?q={quote_plus(role)}&l=India&sort=date"
     jobs = []
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        page.wait_for_timeout(3000)
-        
-        # Check for Cloudflare block
-        if "cloudflare" in page.title().lower() or "verify you are human" in page.content().lower():
-            print(f"Indeed blocked the GitHub Actions server for {role}.")
-            return jobs
-
+        page.goto(url, wait_until="networkidle", timeout=30000)
         cards = page.query_selector_all("div.job_seen_beacon")
         for i, card in enumerate(cards[:10], start=1):
-            title_el = card.query_selector("h2 a")
+            title_el = card.query_selector("h2.jobTitle")
+            title = clean_text(title_el.inner_text()) if title_el else role
             company_el = card.query_selector("[data-testid='company-name']")
+            company = clean_text(company_el.inner_text()) if company_el else "N/A"
+            link_el = card.query_selector("h2.jobTitle a")
+            link = "https://in.indeed.com" + link_el.get_attribute("href") if link_el else "#"
             loc_el = card.query_selector("[data-testid='text-location']")
-            
-            link = "https://in.indeed.com" + title_el.get_attribute("href") if title_el else ""
-            
+            loc = clean_text(loc_el.inner_text()) if loc_el else "India"
             jobs.append({
-                "Platform": "Indeed",
-                "Job Post Date": datetime.now().strftime("%Y-%m-%d"),
-                "Title": clean_text(title_el.inner_text()) if title_el else f"{role}",
-                "Company": clean_text(company_el.inner_text()) if company_el else "N/A",
-                "Link": link,
-                "Compensation": "Check JD", 
-                "YoE": "Check JD",
-                "Location": clean_text(loc_el.inner_text()) if loc_el else "India",
-                "Ambition Box Rating": "N/A",
-                "Glassdoor Rating": "N/A"
+                "S.No": i, "Platform": "Indeed", "Job Post Date": datetime.now().strftime("%Y-%m-%d"),
+                "Title": title, "Company": company, "Link": link,
+                "Compensation": "Check JD", "YoE": "Check JD", "Location": loc,
+                "Ambition Box Rating": "N/A", "Glassdoor Rating": "N/A"
             })
     except Exception as e:
-        print(f"Indeed scraping warning: {e}")
+        print(f"Indeed Error: {e}")
     return jobs
 
-def generate_html_body(date_str, ba_count, da_count):
-    return f"""
-    <html>
-      <body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #1F4E78; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h2 style="color: #ffffff; margin: 0;">Automated Job Agent Report</h2>
-            <p style="color: #d9e2ec; margin: 5px 0 0 0;">{date_str}</p>
-        </div>
-        <div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px; background-color: #f8fafc;">
-            <h3 style="color: #2d3748;">Authentic Daily Matches (India)</h3>
-            <p>The web scraper has successfully processed live job listings. <strong>No mock data was used.</strong></p>
-            <ul>
-                <li><strong>Business Analyst:</strong> {ba_count} real roles found today.</li>
-                <li><strong>Data Analyst:</strong> {da_count} real roles found today.</li>
-            </ul>
-        </div>
-      </body>
-    </html>
-    """
-
-def send_email(files, ba_count, da_count):
+def send_email(files):
     msg = EmailMessage()
-    today_str = datetime.now().strftime('%B %d, %Y')
-    
-    msg['Subject'] = f"🚀 Live Job Matches (India) - {today_str}"
+    msg['Subject'] = f"🚀 Live Job Report - {datetime.now().strftime('%Y-%m-%d')}"
     msg['From'] = os.environ.get("EMAIL_USER")
     msg['To'] = os.environ.get("TO_EMAIL")
-
-    msg.add_alternative(generate_html_body(today_str, ba_count, da_count), subtype='html')
-
+    msg.set_content("Your daily authentic job report is attached.")
     for file in files:
         with open(file, 'rb') as f:
-            file_data = f.read()
-            msg.add_attachment(file_data, maintype='text', subtype='csv', filename=os.path.basename(file))
-
+            msg.add_attachment(f.read(), maintype='text', subtype='csv', filename=os.path.basename(file))
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(os.environ.get("EMAIL_USER"), os.environ.get("EMAIL_PASS"))
         smtp.send_message(msg)
 
 def main():
     all_files = []
-    ba_count = 0
-    da_count = 0
-    
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         page = context.new_page()
-
         for role in ROLES:
-            print(f"Executing LIVE extraction pipeline for {role} in India...")
-            role_jobs = []
-            
-            # Execute authentic scrapers
-            role_jobs.extend(scrape_linkedin(page, role))
-            role_jobs.extend(scrape_indeed(page, role))
-            
-            df = pd.DataFrame(role_jobs)
-            
-            if not df.empty:
-                columns_order = [
-                    'S.No', 'Platform', 'Job Post Date', 'Title', 'Company', 'Link', 
-                    'Compensation', 'YoE', 'Location', 'Ambition Box Rating', 'Glassdoor Rating'
-                ]
-                df = df.reindex(columns=columns_order)
-                df['S.No'] = range(1, len(df) + 1) # Assign real row numbers
-                
-                if role == "Business Analyst": ba_count = len(df)
-                if role == "Data Analyst": da_count = len(df)
-                
+            data = scrape_linkedin(page, role) + scrape_indeed(page, role)
+            if data:
+                df = pd.DataFrame(data)
+                df = df.reindex(columns=['S.No', 'Platform', 'Job Post Date', 'Title', 'Company', 'Link', 'Compensation', 'YoE', 'Location', 'Ambition Box Rating', 'Glassdoor Rating'])
                 filename = os.path.join(OUTPUT_DIR, f"{role.replace(' ', '_')}_Jobs.csv")
                 df.to_csv(filename, index=False)
                 all_files.append(filename)
-                
         browser.close()
-        
-    if all_files and os.environ.get("EMAIL_USER"):
-        send_email(all_files, ba_count, da_count)
-        print("Authentic HTML email dispatched successfully.")
+    if all_files:
+        send_email(all_files)
 
 if __name__ == "__main__":
     main()
