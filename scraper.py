@@ -2,6 +2,7 @@ import os
 import pandas as pd
 from datetime import datetime
 from serpapi import GoogleSearch
+from playwright.sync_api import sync_playwright
 
 ROLES = ["Business Analyst", "Data Analyst"]
 OUTPUT_FILE = "Job_Report.xlsx"
