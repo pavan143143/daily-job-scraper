@@ -1,4 +1,5 @@
 pandas
 xlsxwriter
-google-search-results
-playwright
+beautifulsoup4
+requests
+openpyxl
