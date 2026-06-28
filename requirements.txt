@@ -1,5 +1,4 @@
+apify-client
 pandas
 xlsxwriter
-beautifulsoup4
-requests
 openpyxl
