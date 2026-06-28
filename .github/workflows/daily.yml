@@ -1,37 +1,33 @@
-name: Daily Job Scraper
+name: Apify Job Scraper Pipeline
 
 on:
   schedule:
-    - cron: '0 9 * * *' # Runs daily at 9 AM
+    - cron: '30 9 * * *' 
+      timezone: 'Asia/Kolkata'
   workflow_dispatch:
 
 jobs:
-  scrape-and-email:
+  run-pipeline:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
+          cache: 'pip'
 
-      - name: Install Python Dependencies
+      - name: Install Requirements
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas xlsxwriter google-search-results
+          pip install -r requirements.txt
 
-      - name: Execute Scraper Pipeline
+      - name: Execute Apify Pipeline
         env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           TO_EMAIL: ${{ secrets.TO_EMAIL }}
-          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
         run: python scraper.py
-
-      - name: Archive Excel Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: daily-job-report
-          path: Job_Report.xlsx
