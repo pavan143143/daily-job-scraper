@@ -1,9 +1,9 @@
 name: Apify Job Scraper Pipeline
 
 on:
-  schedule:
-    - cron: '30 9 * * *' 
-      timezone: 'Asia/Kolkata'
+  # schedule:
+  #   - cron: '30 9 * * *' 
+  #     timezone: 'Asia/Kolkata'
   workflow_dispatch:
 
 jobs:
